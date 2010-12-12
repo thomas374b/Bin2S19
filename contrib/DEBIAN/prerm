@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+# Automatically added by dh_installdocs
+if [ \( "" = "upgrade" -o "" = "remove" \) -a -L /usr/doc/bin2s19 ]; then
+  rm -f /usr/doc/bin2s19
+fi
+# End automatically added section
+
