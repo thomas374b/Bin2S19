@@ -30,7 +30,7 @@ CODE	= -fpic # -fpcc-struct-return
 
 MAJOR = 0
 MINOR = 1
-PATCHLEVEL = 4
+PATCHLEVEL = 5
 VERSION = $(MAJOR).$(MINOR).$(PATCHLEVEL)
 
 ifeq (_${MK_DEBPKG}_,__)
@@ -468,7 +468,12 @@ else
 		INST_PREFIX = $(CODEPREFIX)
 endif
 else
+ifeq (_$(PREFIX)_,_/usr_)
+	# a debian package is being built
+	INST_PREFIX = $(PREFIX)
+else
 	INST_PREFIX = $(PREFIX)/$(UMA)
+endif
 endif
 endif
 
@@ -593,7 +598,7 @@ $(TARGET)/Makefile:
 	@if test -f $(TARGET)/Makefile; then echo ok; else ln -s . $(TARGET); fi
 
 clean:
-	@rm -f a.out $(OPA)/*.o core $(OPA)/lib*.so* $(OPA)/lib*.a $(TARGET).pc $(O_MAKE_T) built/.versions	
+	@rm -f a.out $(OPA)/*.o core $(OPA)/lib*.so* $(OPA)/lib*.a $(OPA)/$(TARGET).pc $(O_MAKE_T) built/.versions	
 
 distclean: debclean
 	if test -L $(TARGET); then rm $(TARGET); fi
@@ -635,7 +640,7 @@ static_lib: cflag_info $(OBJS)
 $(O_TARGET): cflag_info $(OBJS)
 	$(CC) $(LINK_OPTS) $(LIBDIR) -o $(O_TARGET) $(OBJS) $(LIBS)	
 
-$(TARGET).pc:
+$(OPA)/$(TARGET).pc:
 	@(echo prefix=$(PREFIX);\
 	echo exec_prefix=$(PREFIX);\
 	echo libdir=$(INST_PREFIX)/lib;\
@@ -647,11 +652,11 @@ $(TARGET).pc:
 	echo Version: $(VERSION);\
 	echo Libs: -L\$\{libdir\} -l$(TARGET);\
 	echo Cflags: -I\$\{includedir\};\
-	) >	$(TARGET).pc
+	) >	$(OPA)/$(TARGET).pc
 		
-install_pkg_conf: $(TARGET).pc
+install_pkg_conf: $(OPA)/$(TARGET).pc
 	@if test -d $(PREFIX)/lib/pkgconfig;\
-	then $(INSTALL) -m 644 $(TARGET).pc $(PREFIX)/lib/pkgconfig;\
+	then $(INSTALL) -m 644 $(OPA)/$(TARGET).pc $(PREFIX)/lib/pkgconfig;\
 	fi
 		
 ifeq (_$(DYNLINK)_,_0_)
@@ -787,7 +792,11 @@ THISPATH = $(shell pwd)
 
 ifeq ($(MK_DEBIAN_PKG),1)
 install: deb
+ifeq (_$(UID)_,_0_)
+	dpkg -i $(THISPATH)/$(O_DEBPKG)
+else	
 	su - root -c 'dpkg -i '$(THISPATH)/$(O_DEBPKG)
+endif
 else
 ifeq ($(MAKE_T),$(KMOD))
 install: install_bin install_mod
@@ -810,7 +819,11 @@ endif
 
 uninstall:
 ifeq ($(MK_DEBIAN_PKG),1)
+ifeq (_$(UID)_,_0_)
+	dpkg -r $(DEBPKG)
+else	
 	su - root -c 'dpkg -r '$(DEBPKG)
+endif
 else
 	rm -rf `cat $(PKGLOG)/$(TARGET)` 
 	rm -f $(PKGLOG)/$(TARGET)
@@ -981,7 +994,13 @@ else
 endif
 endif
 
+HAVESVN = $(shell if svn log >/dev/null 2>&1 && test -d .svn; then echo -n yes; else echo -n no; fi)
+
+ifeq (_S(HAVESVN)_,_yes_)
 DEBBUILD = $(shell svn list -v |sort -n|tail -1|awk '{print $$1}')
+else
+DEBBUILD = $(shell date +%y%m%d)
+endif
 
 DEBUSR = $(DEBRT)/usr
 DEBETC = $(DEBRT)/etc
@@ -1053,11 +1072,19 @@ debutils: contrib/DEBIAN
 	mkDeb.sh -p $(DEBPKG) -t $(DEBSECTION)
 
 contrib/DEBIAN/changelog: contrib/DEBIAN
-	svn log -v >contrib/DEBIAN/changelog
+ifeq (_$(HAVESVN)_,_yes_)
+	@svn log -v >contrib/DEBIAN/changelog
+else
+	echo please generate a changelog >contrib/DEBIAN/changelog
+endif
 	
 contrib/DEBIAN/changelog.Debian: contrib/DEBIAN 
+ifeq (_$(HAVESVN)_,_yes_)
 	@(echo "created by template Makefile";\
 	svn ls -v Makefile) >contrib/DEBIAN/changelog.Debian
+else
+	echo please generate a changelog.Debian.Debian >contrib/DEBIAN/changelog.Debian
+endif
 
 $(DEBCTRL)/p%: debutils $(DEBCTRL)
 #	echo 1 $< 2 $@ 3 $*
@@ -1117,7 +1144,13 @@ DEBDESCTAIL = $(shell wc doc/description |awk '{print $$1-1}')
 
 DEBSIZE = $(shell du -s $(DEBRT) | awk '{print $$1}')
 	
+ifeq ($(MAKE_T),$(LIBNAME))
+debcopy: $(DEBMAN) $(DEBDOC) htmldoc install_deb debfiles $(OPA)/$(TARGET).pc
+	mkdir -p $(DEBLIB)/pkgconfig
+	cp $(OPA)/$(TARGET).pc $(DEBLIB)/pkgconfig
+else
 debcopy: $(DEBMAN) $(DEBDOC) htmldoc install_deb debfiles 
+endif	
 	@(if test -d ./man ; then 	\
 	  (cd ./man; $(TAR) --exclude CVS --exclude .svn -cf - .)|(cd $(DEBMAN); $(TAR) -xf -) ;\
 	  (cd $(DEBMAN); gzip -9 */*);\
