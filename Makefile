@@ -30,7 +30,7 @@ CODE	= -fpic # -fpcc-struct-return
 
 MAJOR = 0
 MINOR = 1
-PATCHLEVEL = 5
+PATCHLEVEL = 6
 VERSION = $(MAJOR).$(MINOR).$(PATCHLEVEL)
 
 ifeq (_${MK_DEBPKG}_,__)
@@ -436,7 +436,7 @@ ifeq (_$(UNAME)_,_cygwin_)
 	BINTARGET = $(TARGET).exe	
 endif
 
-MAKE_T=$(TARGET)
+MAKE_T=$(BINTARGET)
       # only  $(BINTARGET) or $(LIBNAME) or $(KMOD)   allowed
       # $(LIBNAME) means we are compiling a library	
 	  # $(KMOD) means we are compiling a kernel module
@@ -941,7 +941,7 @@ built/.versions:
 	@mkdir -p built ; touch built/.versions 
 else	
 SRCREGEX = $(shell echo `cat .sources `|sed 's/\\//g;s/^.*=[ ]*//g;s/  /|/g')
-built/.versions: $(DEPEND)
+built/.versions: $(SRCS) $(HDRS)
 	@mkdir -p built ; \
 	(echo creating new ls_fulltime version list >&2 ; \
 	    for i in $(SRCS)		; \

@@ -40,6 +40,13 @@ t_opts opts[] = {
 	{empty_func,e_boolean,'x',"hexout\0","make raw hex dump\t\0",false,0,0.0,"xyz.bin\0                                                                                                                "},
 #define hexout opts[6].b
 
+	{empty_func,e_string,'o',"out\0","output file\t\t\0",false,0,0.0,"xyz.s19\0                                                                                                                "},
+#define outFileName opts[7].s
+#define useOutFile opts[7].b
+
+	{empty_func,e_integer,'j',"jump\0","bootloader start address\0",false,0,0.0,"\0                                                                                                                "},
+#define JumpStart opts[8].i
+
 /*
  	{do_prefix,e_boolean,'b',"begin\0","match only trigrams at start of string\0",false,0,0.0,"\0"},
 #define prefix_mode opts[0].b
@@ -209,6 +216,17 @@ void makeS19(void)
 	}
 	int Size = read(ifd,buf,65536);
 	close(ifd);
+
+	char outStr[1024];
+	int ofd = 1;
+	if (useOutFile) {
+		ofd = open(outFileName,O_RDWR|O_TRUNC|O_CREAT);
+		if (ofd < 0) {
+			fprintf(stderr,"open(\"%s\") failed: %s\n",outFileName,strerror(errno));
+			ofd = 1;
+		}
+	}
+	
 		
 	int k = 0;
 	int Length = 0;
@@ -240,8 +258,8 @@ void makeS19(void)
 		if (Len > RecSize)
 			Len = RecSize;
 
-		int ChkSum = 0;
-		ChkSum += Len;
+		int ChkSum = 0;		
+		ChkSum += (Len+3);    	
 		
 		int Addr = baseaddr;
 		if (rasin) {
@@ -249,32 +267,45 @@ void makeS19(void)
 		} else {
 			Addr += k;
 		}			
-		ChkSum += (Addr >> 8);
+		ChkSum += ((Addr >> 8) & 0xff);
 		ChkSum += Addr & 0xff;				
 		
 		if (!(hexout)) {
-			printf("S1%02X%04X",Len+3,Addr);
+			sprintf(outStr, "S1%02X%04X",Len+3,Addr);
+			write(ofd, outStr, strlen(outStr));
 		} else {
-			printf("%04X:",Addr);
+			sprintf(outStr, "%04X:",Addr);
+			write(ofd, outStr, strlen(outStr));
 		}	
 			
 		for (int i=0; i<Len; i++) {
-			printf("%02X",buf[i+k]);
+			sprintf(outStr, "%02X",buf[i+k]);
+			write(ofd, outStr, strlen(outStr));
 			ChkSum += buf[i+k];
 		}		
 		
 		if (!(hexout)) {
-			printf("%02X\r\n",(unsigned char)(0xff - (ChkSum & 0xff)));
+			sprintf(outStr, "%02X\r\n",(unsigned char)(0xff - (ChkSum & 0xff)));
+			write(ofd, outStr, strlen(outStr));
 		} else {
-			printf("\n");
+			sprintf(outStr, "\n");
+			write(ofd, outStr, strlen(outStr));
 		}			
 
 		k += Len;
 		q += Len;
 	}
 	if (!(hexout)) {
-		printf("S903FFFFFE\r\n");
+		char ChkSum = -4;
+		ChkSum += ((JumpStart >> 8) & 0xff);
+		ChkSum += JumpStart & 0xff;				
+		
+		sprintf(outStr, "S903%04X%02X\r\n", JumpStart, ChkSum & 0xFF );
+		write(ofd, outStr, strlen(outStr));
 	}		
+	if (useOutFile) {
+		close(ofd);
+	}
 }
 
 void makeRaw(void) 
