@@ -1,0 +1,97 @@
+<HTML>
+<BODY>
+<PRE>
+<!-- Manpage converted by man2html 3.0.1 -->
+
+</PRE>
+<H2>SYNOPSIS</H2><PRE>
+       Bin2S19 <B>-f</B> <I>&lt;file&gt;</I> <B>-w</B>
+
+       Bin2S19 <B>-f</B> <I>&lt;file&gt;</I> [<B>-r</B>|<B>-s</B>] [<B>-x</B>] [<B>-c</B> <I>&lt;length&gt;</I>] [<B>-b</B> <I>&lt;address&gt;</I>]
+
+
+</PRE>
+<H2>DESCRIPTION</H2><PRE>
+       <B>Bin2S19</B>  converts  binary  files to Motorola S19 format and vice versa.
+       It can process raw binaries as well as binaries created by dasm.
+
+
+</PRE>
+<H2>OPTIONS</H2><PRE>
+       <B>-b</B> <I>&lt;base</I><B>_</B><I>address&gt;</I>
+              offset address where the binary file has to  be  placed  in  the
+              Motorola ROM.
+
+       <B>-f</B> <I>&lt;file</I><B>_</B><I>string&gt;</I>
+              input  file  name. When converting from S19 format to binary the
+              extension "s19" has to be ommitted.  The  output  file  will  be
+              named "&lt;name&gt;-0x&lt;baseaddress&gt;.bin".
+
+       <B>-s,</B> <B>--s19</B>
+              will create s19 format output from binary.
+
+       <B>-r,</B> <B>--ras</B>
+              process binaries created by dasm with format "random access seg-
+              ments".
+
+       <B>-w,</B> <B>--raw</B>
+              make binary output from S19 file.
+
+       <B>-c</B> <I>&lt;record</I><B>_</B><I>number&gt;</I>
+              specifies the S19 record lenght  (number  of  bytes  to  process
+              until linefeed in S19 format will occur).
+
+       <B>-x,</B> <B>--hexout</B>
+              make  raw  hex  dump.  Ommits  the  S19 format record header and
+              trailer for each line.
+
+
+
+       <B>--saverc</B>
+              Save opts to personal rcfile <I>~/.Bin2S19rc</I> .
+
+       <B>-v,</B> <B>--verbose</B>
+              Be more verbose.
+
+       <B>-h,</B> <B>--help</B>
+              Print a help screen with defaults and exit.
+
+       <B>-V</B>     Print version and  copyright  information,  then  exit.  To  get
+              detailed version and copyright information about used modules do
+              a
+
+       <B>Bin2S19</B> looks at these locations to find its defaults.  If  a  file  is
+       found  further  searching  is aborted. All values can be overwritten by
+       its corresponding commandline options.
+
+
+</PRE>
+<H2>ENVIRONMENT</H2><PRE>
+       The <B>HOME</B> variable is used.
+
+
+</PRE>
+<H2>SEE ALSO</H2><PRE>
+       <B>dasm(1)</B>
+
+
+</PRE>
+<H2>BUGS</H2><PRE>
+       no bugs discovered
+
+
+</PRE>
+<H2>AUTHOR</H2><PRE>
+       Thomas Pantzer &lt;Thomas@Pantzer.net&gt;, 2002
+
+
+
+                               October 28, 2002                     <B>Bin2S19(1)</B>
+</PRE>
+<HR>
+<ADDRESS>
+Man(1) output converted with
+<a href="http://www.oac.uci.edu/indiv/ehood/man2html.html">man2html</a>
+</ADDRESS>
+</BODY>
+</HTML>
