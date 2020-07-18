@@ -29,8 +29,8 @@ DEBUG	= -ggdb -DDEBUG
 CODE	= -fpic # -fpcc-struct-return 
 
 MAJOR = 0
-MINOR = 1
-PATCHLEVEL = 0
+MINOR = 2
+PATCHLEVEL = 2
 VERSION = $(MAJOR).$(MINOR).$(PATCHLEVEL)
 
 ifeq (_${MK_DEBPKG}_,__)
@@ -1013,6 +1013,7 @@ srcs: .rmsrcs $(OPA)/.objects .headers forcedep
 
 
 HAVESVN = $(shell if svn log >/dev/null 2>&1 && test -d .svn; then echo -n yes; else echo -n no; fi)
+HAVEGIT = $(shell if git log >/dev/null 2>&1 && test -d .git; then echo -n yes; else echo -n no; fi)
 SVNENTRIES =
 
 ifeq (_$(HAVESVN)_,_yes_)

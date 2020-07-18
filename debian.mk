@@ -20,10 +20,14 @@ else
 endif
 endif
 
+ifeq (_$(HAVEGIT)_,_yes_)
+DEBBUILD = $(shell git rev-list HEAD --count)
+else
 ifeq (_S(HAVESVN)_,_yes_)
 DEBBUILD = $(shell svn list -v |sort -n|tail -1|awk '{print $$1}')
 else
 DEBBUILD = $(shell date +%y%m%d)
+endif
 endif
 
 DEBUSR = $(DEBRT)/usr
@@ -96,18 +100,27 @@ debutils: contrib/DEBIAN
 	mkDeb.sh -p $(DEBPKG) -t $(DEBSECTION)
 
 contrib/DEBIAN/changelog: contrib/DEBIAN
+ifeq (_$(HAVEGIT)_,_yes_)
+	@git log --pretty=format:"- %cd : %s" | awk '{ T = ""; for (i=9; i<NF; i++) {T = T " " $$i}; printf(" - %s %d.%s %d  +%s\n", $$2, $$4, $$3, $$6, T) }' >contrib/DEBIAN/changelog
+else
 ifeq (_$(HAVESVN)_,_yes_)
 	@svn log -v >contrib/DEBIAN/changelog
 else
 	echo please generate a changelog >contrib/DEBIAN/changelog
 endif
-	
-contrib/DEBIAN/changelog.Debian: contrib/DEBIAN 
+endif
+
+ifeq (_$(HAVEGIT)_,_yes_)
+contrib/DEBIAN/changelog.Debian: contrib/DEBIAN/changelog
+	cp contrib/DEBIAN/changelog contrib/DEBIAN/changelog.Debian
+else
+contrib/DEBIAN/changelog.Debian: contrib/DEBIAN
 ifeq (_$(HAVESVN)_,_yes_)
 	@(echo "created by template Makefile";\
 	svn ls -v Makefile) >contrib/DEBIAN/changelog.Debian
 else
-	echo please generate a changelog.Debian.Debian >contrib/DEBIAN/changelog.Debian
+	echo please generate a changelog.Debian >contrib/DEBIAN/changelog.Debian
+endif
 endif
 
 $(DEBCTRL)/p%: debutils $(DEBCTRL)
