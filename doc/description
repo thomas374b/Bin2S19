@@ -1,3 +1,3 @@
-Linux system information
+Converter for Intel-hex to Motorola-s19 format and vice versa.
  .
- More description TBD.
+ It is useful in Makefiles after assembly before flash-programming the target.
