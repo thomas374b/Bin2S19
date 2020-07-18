@@ -1,1 +1,2 @@
-HDRS = 	
+HDRS = \
+	S19rec_c.h		

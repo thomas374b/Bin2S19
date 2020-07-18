@@ -4,11 +4,11 @@
 ##
 
 TARGET = Bin2S19
-LIBS   = -ltns_util -lstdc++
+LIBS   = -ltns_util
 DEFS = 
 
 EXTRA_INC =  
-EXTRA_LIB = 
+EXTRA_LIB = -L/opt/Pantec/lib
 
 BINDIR = bin
 # where to install, choose one of bin, sbin or libexec
@@ -30,7 +30,7 @@ CODE	= -fpic # -fpcc-struct-return
 
 MAJOR = 0
 MINOR = 1
-PATCHLEVEL = 6
+PATCHLEVEL = 0
 VERSION = $(MAJOR).$(MINOR).$(PATCHLEVEL)
 
 ifeq (_${MK_DEBPKG}_,__)
@@ -41,18 +41,42 @@ MK_DEBIAN_PKG = 1
 	# to create debian packages was selected by environment variable MK_DEBPKG
 endif
 
+include .device
 
-include .cache-$(shell uname -n)
+ifneq (_$(DEVICE)_,__)
+include .cache-$(DEVICE)
+endif
+
 include built/.versions
-
-ifeq (_$(UNAME)$(MACHINE)_,__)
-silent:
-	exit
-else
 
 UMA = $(UNAME)-$(MACHINE)
 
+ifeq (_$(UNAME)_,_AVR_)
+
+	MCU = $(MACHINE)
+	CROSS = avr-
+
+	CODE = -mmcu=$(MCU) -fpack-struct -fshort-enums -funsigned-char -funsigned-bitfields
+	CODE += -ffunction-sections -fdata-sections
+	OPTS = -Os
+	
+	DEBUG = -gdwarf-2 
+
+	HEX_FLASH_FLAGS = -R .eeprom
+	HEX_EEPROM_FLAGS = -j .eeprom
+	HEX_EEPROM_FLAGS += --set-section-flags=.eeprom="alloc,load"
+	HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
+
+	AVRDUDE = $(AVRDUDE_PREAMBEL) avrdude -v $(FLASH_CONFIG) -p $(FLASH_TARGET) -c $(FLASH_PROGRAMMER) -P $(FLASH_DEV)
+
+ifeq (_$(WRITE_FUSES)_,__)
+	WRITE_FUSES = -U lfuse:w:$(LFUSE):m -U hfuse:w:$(HFUSE):m -U efuse:w:$(EFUSE):m
+	READ_FUSES = -U lfuse:r:-:h -U hfuse:r:-:h -U efuse:r:-:h
+endif
+
+else
 ifeq (_$(MACHINE)_,_strongarm_)
+	# Neo
 	# zaurus (all models, kernel), use original Sharp compiler
 	CROSS = arm-linux-
 else
@@ -63,15 +87,44 @@ else
 ifeq (_$(MACHINE)_,_etrax100lx_)
 			# FOX board
 			CROSS = cris-axis-linux-gnu-
+else
+ifeq (_$(MACHINE)_,_armv7_)
+ifeq (_$(shell uname -m)_,_armv7l_) 
+		# compiling on banana-pi directly
+else
+				# Kobo Mini
+				# small executables, no float/double, knows -march=armv7
+				# CROSS = arm-linux-gnueabihf-				
+				# for kobo kernel
+				CROSS = arm-none-linux-gnueabi-
+				# supports -msoft-float, denies -march=armv7
+				DEFINES += -D__LINUX_ARM_ARCH__=7
+endif				
+else
+ifeq (_$(MACHINE)_,_armv5_)
+					# Olinuxino iMX233 for kernels  
+					# CROSS = arm-none-eabi-
+					CROSS = arm-none-linux-gnueabi-
+					EXTRA_INC += -I/opt/Toolchains/arm-none-linux-gnueabi/arm-none-linux-gnueabi/libc/usr/include		
+endif
+endif
 endif
 endif	
 endif	
+endif	
 
-CC	= $(CROSS)gcc
+ifeq (_$(_GCC)_,__)
+_GCC = g++
+# _GCC = gcc
+endif
+
+CC	= $(CROSS)$(_GCC)
 LD	= $(CROSS)ld
+OBJDUMP = $(CROSS)objdump
+OBJCOPY = $(CROSS)objcopy
 AR	= $(CROSS)ar
 STRIP = $(CROSS)strip
-CC_LINK	= $(CROSS)gcc
+CC_LINK	= $(CROSS)$(_GCC)
 CC_VERSION = $(shell $(CC) -dumpversion)
 
 SBIN_TARGET = $(shell test -f man/man8/$(TARGET).8 && echo "s")
@@ -93,41 +146,65 @@ WITH_XINC =
 # REVISION = $(shell date +%Y/%m/%d,%H:%M)
 UID = $(shell id |sed -e 's/[0-9][0-9]*/ & /g'|cut -f2 -d' ')
 
-ifeq (_${PREFIX}_,__)
-ifeq ($(MK_DEBIAN_PKG),1)
-	# debian package is being built, PREFIX must be /usr
-	PREFIX = /usr
-else
 	OPTROOT = /opt
 		# choose one of /Software, /public, /usr/local, /opt or whatever your prefix is 
-ifeq (_$(UID)_,_0_)
-		PREFIX = $(OPTROOT)$(SUBPREFIX)
+
+ifeq (_$(PREFIX)_,__)
 ifeq (_$(MACHINE)_,_strongarm_)
-			PREFIX=/mnt/SD/armv4l
+ifeq (_$(DEVICE)_,_neo_)
+			SUBPREFIX = /qtmoko
+else
+			OPTROOT = /mnt/SD/
+			SUBPREFIX = /armv4l
+endif
 else
 ifeq (_$(MACHINE)_,_armv5te_)
-				PREFIX=/mnt/SD/armv5te
+			OPTROOT = /mnt/SD/
+			SUBPREFIX = /armv5te
 else
 ifeq (_$(MACHINE)_,_etrax100lx_)
-					PREFIX=/mnt/SD/etrax
+				OPTROOT = /mnt/SD/
+				SUBPREFIX = /etrax			
 endif
 endif	
 endif	
 
+
 ifeq (_$(CROSS)_,__)
-			PKGLOG = /var/log/packages
-else	
-			PKGLOG = $(OPTROOT)/$(UMA)/.packages
+ifeq (_$(UID)_,_0_)
+ifeq ($(MK_DEBIAN_PKG),1)
+				# debian package is being built, PREFIX must be /usr
+				PREFIX = /usr
+else
+		    PREFIX = $(OPTROOT)$(SUBPREFIX)
 endif
 else
+ifeq (_$(SUBPREFIX)_,_/Pantec_)
+			# unchanged
 		PREFIX = ${HOME}
-		PKGLOG = ${HOME}/.packages
 		# private users installation goes to your homedir
+else
+			# customized
+			PREFIX = $(OPTROOT)$(SUBPREFIX)
+endif			
 endif
+else	
+		PREFIX = $(OPTROOT)$(SUBPREFIX)
 endif
 else
 	PREFIX = ${PREFIX}
 		# use prefix variable from environment
+endif	# PREFIX __
+
+
+ifeq (_$(CROSS)_,__)
+ifeq (_$(UID)_,_0_)
+		PKGLOG = /var/log/packages
+else
+		PKGLOG = $(PREFIX)/.packages
+endif
+else
+	PKGLOG = $(PREFIX)/.packages
 endif
 
 ETCRT = $(PREFIX)
@@ -136,86 +213,34 @@ ifeq (_$(UID)_,_0_)
 	# root is compiling
 	CODEPREFIX=$(PREFIX)
 else
-	ifeq (_$(PREFIX)_,_/usr_)
+ifeq (_$(PREFIX)_,_/usr_)
 		# a debian package is being built
 		CODEPREFIX=$(PREFIX)
 		ETCRT = /
-	else
+else
 		# machine dependent prefix for user home installation
+ifeq (_$(CROSS)_,__)		
+ifeq (_$(SUBPREFIX)_,_/Pantec_)
 		CODEPREFIX=$(PREFIX)/$(UMA)
-	endif
-endif
+else
+			CODEPREFIX=$(PREFIX)
+endif # SUBPREFIX /Pantec	
+else
+			CODEPREFIX=$(PREFIX)
+endif # CROSS __	
+endif # REFIX /usr
+endif # UID 0
 
 DEFINES += -DETC_PREFIX=\"$(ETCRT)\"
 
 
-ifneq (_$(CROSS)_,__)
-ifeq (_$(MACHINE)_,_strongarm_)
-		CODEPREFIX=/mnt/SD/armv4l
-else
-ifeq (_$(MACHINE)_,_armv5te_)
-			CODEPREFIX=/mnt/SD/armv5te
-else
-ifeq (_$(MACHINE)_,_etrax100lx_)
-				CODEPREFIX=/mnt/SD/etrax
-else
-				CODEPREFIX=$(PREFIX)/$(UMA)	
-endif
-endif	
-endif	
-endif	
-
+UISRC = 
+MOCSRC = 
+RCCSRC = 
 
 ifeq ($(WITH_QTOPIA),y)
-	# if Qtopia toolkit is used
-ifeq (_$(CROSS)_,__)	
-	QPEDIR = /opt/Qt-2.3.3
-	QTDIR = $(QPEDIR)/$(UMA)
-else
-	QPEDIR = /home/QtPalmtop
-	QTDIR = $(QPEDIR)
-endif
-
-UISRC = $(shell ls *.ui 2>/dev/null |sed s/\.ui$$//g)
-MOCSRC = $(shell grep -l Q_OBJECT *.h 2>/dev/null | sed s/\.h$$//g)
-
-ifeq (_$(CROSS)_,_arm-v5te-linux-_)	
-v5teerr:
-	@echo -n "target qtopia libs can't be linked properly with gcc 3.3.2. "
-	@echo "Use arm-linux-g++"
-else
-	LIBS += -lqte # -lcrypt -ldl 
-	DEFS += -DQWS 
-#			EXTRA_LIB += -L$(QTDIR)/lib
-ifeq (_$(CROSS)_,__)
-	LIBS += -lstdc++
-	CODEPREFIX=$(PREFIX)
-	PREFIX = $(QTDIR)
-else
-	DEFS += -DQT_NO_PROPERTIES
-	LIBS += -lqpe -ljpeg # -lcrypt -ldl 
-	EXTRA_INC += -I$(CODEPREFIX)/include
-	EXTRA_LIB += -L$(QPEDIR)/lib
-	PREFIX = $(QPEDIR)
-endif
-	# Meta-object compiler                                                                          
-	MOC = $(QTDIR)/bin/moc
-	
-	# UI compiler                                                                                   
-	UIC = $(QTDIR)/bin/uic
-	
-	UMAUIC = $(OPA)/.uic
-
-ifneq (_$(UISRC)_,__)
-		EXTRA_INC += -I$(UMAUIC)
-endif
-
-	OPTS +=	-pipe -fno-exceptions -fno-rtti
-
-#	DEFS += -DQT_NO_DRAGANDDROP -DQT_NO_PROPERTIES 
-#	LINK_OPTS = -Wl,-rpath,$(OPTROOT)/xscale/lib/gcc-lib/arm-v5te-linux/2.95.3	
-endif
-endif	# ifeq WITH_QTOPIA
+# include qtopia1.mk
+endif	# i f e q  WITH_QTOPIA
 
 MANSUFFIX = 1
 
@@ -225,9 +250,15 @@ ifeq (_$(UNAME)_,_Linux_)
 	# native
 	GPREFIX=
 endif
+
 ifeq (_$(UNAME)_,_cygwin_)
 	GPREFIX=
 endif
+
+ifeq (_$(UNAME)_,_AVR_)
+	GPREFIX=
+endif
+
 
 TAR = $(GPREFIX)tar
 INSTALL = $(GPREFIX)install
@@ -249,12 +280,17 @@ ifeq (_$(LIBC)_,_5_)
 			OPTS += -m486
 				DEFS += -DLIBC$(LIBC)
 else
+ifeq (_$(CC)_,_arm-none-linux-gnueabi-$(_GCC)_)
+				# -march=armv7 not supported
+				#       OPTS += -mno-thumb
+else
 				OPTS += -march=$(MACHINE) 
-endif	
-endif	
-endif
-endif	
-endif	
+endif # arm-none-linux-gnueabi				
+endif # LIBC	
+endif # _armv5te_	
+endif # _strongarm_
+endif # _sparc64_	
+endif # _Linux_	
 
 ifeq (_$(UNAME)_,_SunOS_)
 	EXTRA_INC += -I/usr/openwin/include # -I/usr/ucbinclude 
@@ -279,14 +315,14 @@ DEFS += -DCOMPILER_VERSION=\"$(CC_VERSION)\"
 
 TARGETPREFIX=$(CODEPREFIX)
 
-ifeq (_$(UID)_,_0_)
+# i f e q (_$(UID)_,_0_)
 ifneq (_$(CROSS)_,__)
 ifeq (_$(MACHINE)_,_etrax100lx_)
 			TARGETPREFIX = /mnt/flash
 endif
 		SHARES_PATH = $(TARGETPREFIX)/share/$(TARGET)
 endif
-endif	
+# e n d i f	
 
 DEFS += -DPREFIX=\"$(TARGETPREFIX)\" 
 DEFS += -DSHARES_PATH=\"$(SHARES_PATH)\"
@@ -334,12 +370,12 @@ ifeq (_$(UNAME)_,_Linux_)
 else
 errortarget:
 			echo not defined for $(UNAME)
-endif	
-endif
-
+endif # _Linux_	
+endif # _SunOS_
 	LIBS += -lXm -lXmu -lXt 
 	WITH_X=y
-endif
+endif # WITH_MOTIF
+
 
 ifeq ($(WITH_XFORMS),y)
 	XINCLDIR += -I/opt/include
@@ -347,15 +383,16 @@ ifeq ($(WITH_XFORMS),y)
 	LIBS += -lforms -lm -lXpm
 ifeq (_$(LIBC)_,_5_)
 		LIBS += -lMesaGL -L$(OPTROOT)/lib/MesaGL -lXext
-endif	
+endif # LIBC5	
 	WITH_X=y
-endif
+endif # WITH_XFORMS
 
 ifeq ($(WITH_XAW),y)
   LIBS += -lXmu -lXaw3d -lXt
   WITH_X=y
 endif  
 
+ifeq (_$(WITH_X)_,_y_)
 ifeq (_$(UNAME)_,_SunOS_)  
   XINCLDIR += -I/usr/openwin/include/X11
   XLIBDIR  += -L/usr/openwin/lib
@@ -366,14 +403,18 @@ ifeq (_$(UNAME)_,_Linux_)
   XLIBDIR  += -L/opt/Xorg/lib -L/usr/X11R6/lib
   XLIBPATH = /opt/Xorg/lib/X11
 else
-# ifeq (_$(UNAME)_,_hpux_)                                                                         
+ifeq (_$(UNAME)_,_hpux_)                                                                         
   XINCLDIR += -I/usr/include/X11R5                                                              
   XLIBDIR  += -L/usr/lib/X11R5     
   XLIBPATH = /usr/lib/X11
-# else
-#  echo X-includes not defined for $(UNAME)
-# endif
+else
+errortarget:
+	echo X-includes not defined for $(UNAME)
 endif
+endif
+endif
+
+
 endif
 
 
@@ -424,12 +465,14 @@ ifeq (_$(DYNLINK)_,_0_)
 	LIBNAME = lib$(TARGET).a
 endif
 
+
 include .headers
 include .sources
 include .defines
+
 DEFS += $(DEFINES)
 
-CFLAGS	= $(OPTS) $(WARN) $(DEFS) $(DEBUG_FLAGS) 
+CFLAGS	= $(CODE) $(OPTS) $(WARN) $(DEFS) $(DEBUG_FLAGS) 
 
 BINTARGET = $(TARGET)
 ifeq (_$(UNAME)_,_cygwin_)
@@ -443,8 +486,8 @@ MAKE_T=$(BINTARGET)
 
 
 ifeq ($(MAKE_T),$(KMOD))
-	INCLDIR = -I/usr/src/linux-$(KERNEL_VERSION)/include
-	CFLAGS = -O6 -DMODULE -D__KERNEL__ -Wstrict-prototypes -fomit-frame-pointer $(DEFINES) $(WARN) $(DEBUG_FLAGS) $(EXTRA_INC)
+	INCLDIR = -I/usr/src/linux-$(KERNEL_VERSION)-$(MACHINE)/include
+	CFLAGS = -O6 -D__$(MACHINE)__ -D__$(DEVICE)__ -DMODULE -D__KERNEL__ -Wstrict-prototypes -fomit-frame-pointer $(DEFINES) $(WARN) $(DEBUG_FLAGS) $(EXTRA_INC)
 	TARGETNAME = $(TARGET)
 	UMA = $(UNAME)-$(MACHINE)-$(KERNEL_VERSION)
 	OPA = built/$(UMA)
@@ -454,30 +497,41 @@ ifeq ($(MAKE_T),$(KMOD))
 else
 	OPA = built/$(UMA)
 	OPA_M = $(OPA)
+endif
+	
 ifeq ($(MAKE_T),$(LIBNAME))
-	CFLAGS += -I. $(CODE)
 	TARGETNAME = $(SONAME)
 	MANSUFFIX = 3
 else
 	TARGETNAME = $(TARGET)
 endif
+
 ifeq (_${LOGNAME}_,_root_)
 ifeq (_$(CROSS)_,__)
 	INST_PREFIX = $(PREFIX)
 else
-		INST_PREFIX = $(CODEPREFIX)
+	INST_PREFIX = $(CODEPREFIX)
 endif
 else
 ifeq (_$(PREFIX)_,_/usr_)
 	# a debian package is being built
 	INST_PREFIX = $(PREFIX)
 else
+ifeq (_$(CROSS)_,__)
+ifeq (_$(SUBPREFIX)_,_/Pantec_)
 	INST_PREFIX = $(PREFIX)/$(UMA)
-endif
-endif
-endif
+else
+	INST_PREFIX = $(CODEPREFIX)
+endif # SUBPREFIX /Pantec
+else
+	INST_PREFIX = $(CODEPREFIX)
+endif #	CROSS __
+endif # PREFIX /usr
+endif # LOGNAME root
 
+ifneq (_$(UNAME)$(MACHINE)_,__)
 include $(OPA)/.objects
+endif
 
 CFLAGS += -DVERSION=\"$(VERSION)\" 
 CFLAGS += -DBUILDDATE=\"$(shell date +%Y/%m/%d,%H:%M)\"
@@ -507,11 +561,41 @@ ifeq ($(MAKE_T),$(LIBNAME))
 	ifeq (_$(MACHINE)_,_etrax100lx_)
 		# the cris architecture requires the -fPIC flag for libraries
 		CFLAGS += -fPIC
-	endif
+endif
 endif
 
+ifeq (_$(UNAME)_,_AVR_)
+$(OPA)/$(TARGET).hex: $(OPA)/$(TARGET).elf
+	@avr-size $(OPA)/$(TARGET).elf
+	@$(OBJCOPY) -R .eeprom -O ihex $(OPA)/$(TARGET).elf $(OPA)/$(TARGET).hex
+	@$(MAKE) $(OPA)/$(TARGET).size 
+
+$(OPA)/$(TARGET).bin: $(OPA)/$(TARGET).elf
+	@cp $(OPA)/$(TARGET).bin $(OPA)/$(TARGET).bin.old | touch $(OPA)/$(TARGET).bin.old	
+	@$(OBJCOPY) -R .eeprom -O binary $(OPA)/$(TARGET).elf $(OPA)/$(TARGET).bin
+
+$(OPA)/$(TARGET).size: $(OPA)/$(TARGET).bin 
+	@echo $(shell echo $(shell ls -l $(OPA)/$(TARGET).bin | awk '{print $$5}') $(shell ls -l $(OPA)/$(TARGET).bin.old | awk '{print $$5}') | awk '{printf("size is %d,\t delta: %d\n", $$1, $$1 - $$2)}')	
+
+$(OPA)/$(TARGET).lss: $(OPA)/$(TARGET).elf
+	$(OBJDUMP) -h -S $(OPA)/$(TARGET).elf  >$(OPA)/$(TARGET).lss 
+
+$(OPA)/$(TARGET).eep: $(OPA)/$(TARGET).elf
+	$(OBJCOPY) $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0 
+#	 -j .eeprom --set-section-flags=.eeprom=alloc,load --no-change-warnings --change-section-lma .eeprom=0
+	 
+$(OPA)/$(TARGET).elf: $(OBJS)
+	$(CC) -Os -Wl,--gc-sections $(CFLAGS) -Wl,-Map,$(OPA)/$(TARGET).map -mmcu=$(MCU) -o $(OPA)/$(TARGET).elf $(OBJS) $(LIBS) 
+	
+all: $(DEPEND) $(OPA)/$(TARGET).hex
+	@ls -l $(OPA)/$(TARGET).hex
+	
+else
 all: $(DEPEND) $(O_MAKE_T) 
 	@ls -l $(O_MAKE_T)          
+
+endif 
+
 
 help:
 	@(echo "useful targets are"			;\
@@ -526,83 +610,52 @@ help:
 	read A )
 
 ifeq ($(WITH_QTOPIA),y)
-$(UMAUIC):
-	mkdir -p $(UMAUIC)
-	
-.uic: $(UMAUIC)	
-	rm -f .uic
-	ln -s $(UMAUIC) .uic
-
-$(UMAUIC)/.depend: .$(UMA)_o .uic
-	@>$(UMAUIC)/.depend
-ifneq (_$(UISRC)_,__)
-	@echo generating uic dependencies
-	@(for i in $(UISRC) 	;\
-	do	echo create $(UMAUIC)/$$i.h >&2 ;\
-		$(UIC) $$i.ui -o $(UMAUIC)/$$i.h	;\
-		echo create uic_$$i.cpp >&2 ;\
-		$(UIC) $$i.ui -i $(UMAUIC)/$$i.h -o uic_$$i.cpp	;\
-		echo $(UMAUIC)/$$i.h: $$i.ui ;\
-		echo "	$(UIC) $$i.ui -o $(UMAUIC)/$$i.h"	;\
-		echo ;\
-		echo uic_$$i.cpp: $$i.ui ;\
-		echo "	$(UIC) $$i.ui -i $(UMAUIC)/$$i.h -o uic_$$i.cpp" ;\
-		echo ;\
-		echo ;\
-		$(MOC) $(UMAUIC)/$$i.h -o moc_$$i.cpp ;\
-		echo moc_$$i.cpp: $(UMAUIC)/$$i.h ;\
-		echo "	$(MOC) $(UMAUIC)/$$i.h -o moc_$$i.cpp" ;\
-		echo ;\
-	done) >>$(UMAUIC)/.depend
-endif	
-ifneq (_$(MOCSRC)_,__)
-	@echo generating moc dependencies
-	@(for i in $(MOCSRC) 	;\
-	do	echo create moc_$$i.cpp >&2 ;\
-		$(MOC) $$i.h -o moc_$$i.cpp ;\
-		echo moc_$$i.cpp: $$i.h  ;\
-		echo "	$(MOC) $$i.h -o moc_$$i.cpp" ;\
-		echo ;\
-	done) >>$(UMAUIC)/.depend	
-endif	
-	@echo touch $(UMAUIC)/.depend	
-
-#moc_%.cpp: %.h $(UMAUIC)/%.ui $(UMAUIC)
-#	$(MOC) $(UMAUIC)/$$i.h -o moc_$$i.cpp	
-
+# include qtopia2.mk
 $(OPA)/%.dep: $(UMAUIC)/.depend
 else
 $(OPA)/%.dep: 
 endif
+ifneq (_$(UNAME)$(MACHINE)_,__)
 	@echo "refreshing dependency $@" 	
 	@$(CC) $(CFLAGS) -DMODNAME=\"$*\" $(INCLDIR) -M $*  		|\
-	sed -e "s/^.*\.o\:\ /built\/$(UMA)\/&/g;s/\: $*/& built\/.versions/g"  	>$@
+	sed -e "s/^.*\.o\:\ /built\/$(UMA)\/&/g"  	>$@
+endif	
 	rm -f built/.versions
 
 $(OPA)/%.o: 
-	@echo [CC] $< \-\> $@
+	@echo [$(CC)] $< \-\> $@
 	@$(CC) $(CFLAGS) -DMODNAME=\"$*\" -DREVISION=\"$($<.version)\" $(INCLDIR) -c $< -o $@
 
+ifneq (_$(UNAME)$(MACHINE)_,__)
 .$(UMA)_o: 
 	@(echo "making target directory $(UMA)" ;\
 	 rm -rf $(OPA) ;\
 	 mkdir -p $(OPA_M) ;\
 	 touch .$(UMA)_o ;\
 	 $(MAKE) help     )
+endif
 
 cflag_info:
+	@echo CROSS=$(CROSS) UID=$(UID) OPTROOT=$(OPTROOT) SUBPREFIX=$(SUBPREFIX) PREFIX=$(PREFIX)  INST_PREFIX=$(INST_PREFIX)  CODEPREFIX=$(CODEPREFIX)
 	@echo using flags $(CFLAGS) $(INCLDIR)
 	@echo
 
 $(TARGET)/Makefile:
 	@if test -f $(TARGET)/Makefile; then echo ok; else ln -s . $(TARGET); fi
 
-clean:
+depclean:
+	@find built/ -type f -name "*.dep" -empty -exec rm {} \;	
+
+clean: depclean
 	@rm -f a.out $(OPA)/*.o core $(OPA)/lib*.so* $(OPA)/lib*.a $(OPA)/$(TARGET).pc $(O_MAKE_T) built/.versions	
 
+ifeq ($(MK_DEBIAN_PKG),1)
 distclean: debclean
+else
+distclean:
+endif	
 	if test -L $(TARGET); then rm $(TARGET); fi
-	rm -rf ./built moc_*.cpp uic_*.cpp .*_o core a.out *.bck .cache-* *.bak .*.bak .*.bck Makefile-* .hc~*~
+	rm -rf ./built moc_*.cpp uic_*.cpp .*_o core a.out *.bck *.bak .*.bak .*.bck Makefile-* .hc~*~
 	chmod 440 .headers .sources .defines
 
 $(O_KMOD): cflag_info $(OBJS)
@@ -632,7 +685,7 @@ endif	# Linux
 else
 $(O_LIBNAME): static_lib
 	@echo dynamic linking not defined for $(UNAME)                                           
-endif
+endif	# DYNLINK 1
 
 static_lib: cflag_info $(OBJS)
 	$(AR) -rc $(OPA)/lib$(TARGET).a $(OBJS)
@@ -640,11 +693,19 @@ static_lib: cflag_info $(OBJS)
 $(O_TARGET): cflag_info $(OBJS)
 	$(CC) $(LINK_OPTS) $(LIBDIR) -o $(O_TARGET) $(OBJS) $(LIBS)	
 
+ifeq (_$(RCP)_,_cp_)
+$(RCPBIN):
+	mkdir -p $(RCPBIN)
+	
+$(RCPLIB):
+	mkdir -p $(RCPLIB)
+endif
+
 $(OPA)/$(TARGET).pc:
-	@(echo prefix=$(PREFIX);\
-	echo exec_prefix=$(PREFIX);\
+	@(echo prefix=$(INST_PREFIX);\
+	echo exec_prefix=$(INST_PREFIX);\
 	echo libdir=$(INST_PREFIX)/lib;\
-	echo includedir=$(PREFIX)/include/$(TARGET);\
+	echo includedir=$(INST_PREFIX)/include/$(TARGET);\
 	echo "";\
 	echo Name: $(TARGET);\
 	echo Description: $(TARGET) library;\
@@ -663,12 +724,17 @@ ifeq (_$(DYNLINK)_,_0_)
 install_lib: install_pkg_conf $(OPA)/lib$(TARGET).a $(INST_PREFIX)/lib$(GDBPREFIX)
 	$(INSTALL) -m 644 $(OPA)/lib$(TARGET).a $(INST_PREFIX)/lib$(GDBPREFIX)	
 else
-install_lib: install_pkg_conf $(O_LIBNAME) $(INST_PREFIX)/lib$(GDBPREFIX)
+install_lib: install_pkg_conf $(O_LIBNAME) $(INST_PREFIX)/lib$(GDBPREFIX) $(RCPLIB)
 ifeq (_$(DEBUG_FLAGS)_,__)	
-	$(STRIP) $(O_LIBNAME) 
+	$(STRIP) --strip-unneeded --discard-locals $(O_LIBNAME) 
 endif
 	@if test -r $(OPA)/lib$(TARGET).a ; then $(INSTALL) -m 644 $(OPA)/lib$(TARGET).a $(INST_PREFIX)/lib$(GDBPREFIX) ; fi
 	$(INSTALL) -m 755 $(O_LIBNAME) $(INST_PREFIX)/lib$(GDBPREFIX)
+ifneq (_$(CROSS)_,__)
+ifneq (_$(RCP)_,__)
+	$(RCP) $(O_LIBNAME) $(REMOTE_PREFIX)/lib$(GDBPREFIX)/
+endif	
+endif	
 ifeq (_${LOGNAME}_,_root_)
 ifeq (_$(CROSS)$(DEBUG_FLAGS)_,__)
 	ldconfig
@@ -685,12 +751,19 @@ else
 	rm -f $(DEVLIBSYM) $(SONAME);\
 	ln -s $(LIBNAME) $(SONAME);\
 	ln -s $(LIBNAME) $(DEVLIBSYM) )
+ifeq (_$(RCP)_,_cp_)
+	(cd $(REMOTE_PREFIX)/lib$(GDBPREFIX);\
+	rm -f $(DEVLIBSYM) $(SONAME);\
+	ln -s $(LIBNAME) $(SONAME);\
+	ln -s $(LIBNAME) $(DEVLIBSYM) )
+endif
 endif
 endif
 
-install_inc: $(PREFIX)/include/$(TARGET)
+install_inc: $(INST_PREFIX)/include/$(TARGET)
+	@echo installing links to include files into $(INST_PREFIX)/include/$(TARGET)
 	@(SRCPATH=`pwd` ;\
-	  cd $(PREFIX)/include/$(TARGET) ; \
+	  cd $(INST_PREFIX)/include/$(TARGET) ; \
 	  for I in $(HDRS) ;\
 	    do rm -f $$I ;\
 	    ln -s $$SRCPATH/$$I $$I ;\
@@ -707,18 +780,45 @@ $(KMODDIR):
 install_bin: $(O_KMOD) $(KMODDIR)
 	@if test -w $(KMODDIR); \
 	then $(INSTALL) -m 755 $(O_KMOD) $(KMODDIR); \
-	ls -l $(KMODDIR)/$(TARGET).o				;\
-	else echo must be root to write in $(KMODDIR); \
-	fi
+	ls -l $(KMODDIR)/$(TARGET).o; else echo must be root to write in $(KMODDIR); fi
 ifeq (_$(UID)_,_0_)
 	depmod -a
 else
 	@echo must be root to write dependancies
 endif
+else # MAKE_T == KMOD
+ifeq (_$(UNAME)_,_AVR_)
+install_bin: $(OPA)/$(TARGET).hex .fuses-read
+	$(AVRDUDE) -U flash:w:$(OPA)/$(TARGET).hex
+
+.fuses-read:
+ifeq (_$(READ_FUSES)_,__)
+	@echo "READ_FUSES = -U lfuse:r:-:h -U hfuse:r:-:h -U efuse:r:-:h" >>.cache-$(DEVICE)
+	@echo 'WRITE_FUSES = -U lfuse:w:$$(LFUSE):m -U hfuse:w:$$(HFUSE):m -U efuse:w:$$(EFUSE):m' >>.cache-$(DEVICE)
+	@echo "Edit READ_FUSES in .cache-$(DEVICE)"
 else
-install_bin: compact  $(INST_PREFIX)/$(BINDIR_)    # 
-	$(INSTALL) -m 755 $(O_TARGET) $(INST_PREFIX)/$(BINDIR_)
+	@echo "# https://eleccelerator.com/fusecalc/fusecalc.php" >.fuses-read
+	$(AVRDUDE) $(READ_FUSES) | awk '{c[0] = "L"; c[1] = "H"; c[2] = "E"; n++; printf("%sFUSE = %s\n", c[n-1], $$1)}' >>.fuses-read
 endif
+
+ifeq (_$(HFUSE)_,__)
+fuses: 	.fuses-read
+	@echo copy fuses variables to .cache-$(DEVICE)	
+else
+fuses: 
+	$(AVRDUDE) $(WRITE_FUSES)
+endif
+
+else # UNAME == AVR
+install_bin: compact  $(INST_PREFIX)/$(BINDIR_) $(RCPBIN)  # 
+	$(INSTALL) -m 755 $(O_TARGET) $(INST_PREFIX)/$(BINDIR_)
+ifneq (_$(CROSS)_,__)
+ifneq (_$(RCP)_,__)
+	$(RCP) $(O_TARGET) $(REMOTE_PREFIX)/$(BINDIR_)
+endif # RCP !=  	
+endif # CROSS != 		
+endif # UNAME == AVR
+endif # MAKE_T != KMOD
 
 install_mod: $(O_KMOD)
 ifeq (_$(UID)_,_0_)
@@ -737,8 +837,8 @@ $(INST_PREFIX)/lib$(GDBPREFIX):
 $(PREFIX)/share/$(TARGET):
 	mkdir -p $(PREFIX)/share/$(TARGET)
 
-$(PREFIX)/include/$(TARGET):
-	mkdir -m 755 -p $(PREFIX)/include/$(TARGET)
+$(INST_PREFIX)/include/$(TARGET):
+	mkdir -m 755 -p $(INST_PREFIX)/include/$(TARGET)
 
 $(PREFIX)/man:
 	mkdir -m 755 -p $(PREFIX)/man
@@ -794,10 +894,12 @@ ifeq ($(MK_DEBIAN_PKG),1)
 install: deb
 ifeq (_$(UID)_,_0_)
 	dpkg -i $(THISPATH)/$(O_DEBPKG)
-else	
-	su - root -c 'dpkg -i '$(THISPATH)/$(O_DEBPKG)
-endif
 else
+	su - root -c 'dpkg -i '$(THISPATH)/$(O_DEBPKG)
+endif	
+
+else
+
 ifeq ($(MAKE_T),$(KMOD))
 install: install_bin install_mod
 else
@@ -820,8 +922,8 @@ endif
 uninstall:
 ifeq ($(MK_DEBIAN_PKG),1)
 ifeq (_$(UID)_,_0_)
-	dpkg -r $(DEBPKG)
-else	
+	dpkg -r $(O_DEBPKG)
+else
 	su - root -c 'dpkg -r '$(DEBPKG)
 endif
 else
@@ -844,6 +946,8 @@ gdb:
 	@$(MAKE) DEBUG_FLAGS="$(DEBUG)" WARN="-Wall" OPTS="" && make DEBUG_FLAGS="$(DEBUG)" install_lib
 endif
 
+
+
 gdball:  clean gdb
 
 
@@ -852,11 +956,7 @@ depend:
 	rm $(OPA)/*.dep $(OPA)/.depend
 	$(MAKE) $(DEPEND)
 
-ifeq ($(MAKE_T),$(LIBNAME))
-$(DEPEND): $(TARGET)/Makefile .sources .headers .$(UMA)_o
-else
 $(DEPEND): .sources .headers .$(UMA)_o
-endif
 ifeq (_$(SRCS)_,__)
 	$(MAKE) $(DEPEND)
 else	
@@ -866,7 +966,6 @@ else
 	    echo include built/$(UMA)/$$i.dep	; \
 	    done ) >$(DEPEND)
 endif
-
 
 
 $(OPA)/.objects: .sources .$(UMA)_o 
@@ -908,32 +1007,42 @@ srcs: .rmsrcs $(OPA)/.objects .headers forcedep
 	egrep -v '^//' *.[cChH] *.cc *.cpp 2>/dev/null	|\
 	egrep '\#define [A-Z][A-Z_]*[ \	]*(\"[0-9A-Za-z_/\\]*\"|[0-9][0-9]*[ ]*)$$' |\
 	awk '{for (i=2; i<=NF; i++) { \
-	if (i==2) printf("// DEFINES += -D%s=",$$i);	\
+	if (i==2) printf("# DEFINES += -D%s=",$$i);	\
 	else printf("%s",$$i); } printf("\n");}' 	|\
 	sed -e 's/\"/\\&/g' >>.defines )
 
 
+HAVESVN = $(shell if svn log >/dev/null 2>&1 && test -d .svn; then echo -n yes; else echo -n no; fi)
+SVNENTRIES =
+
+ifeq (_$(HAVESVN)_,_yes_)
+	SVNENTRIES = .svn/entries 
+endif
+
 ## dependencies follow
 
+ifneq (_$(UNAME)$(MACHINE)_,__)
 include $(DEPEND)
+endif
 
 ifeq (_$(WITH_QTOPIA)_,_y_)
 include $(UMAUIC)/.depend
 endif 
 
-endif	# i f e q (_$(UNAME)$(MACHINE)_,__)
 
-.cache-$(shell uname -n):
+.device:
+	echo "DEVICE = $(shell uname -n)" >.device
+
+.cache-$(DEVICE):
 	@(echo UNAME = $(shell uname|sed -e "s/HP\-UX/hpux/g;s/CYGWIN_NT-\([45]\).\([01]\)/cygwin/g"); \
-	if [ "$(CROSS)" = "" ]; then echo MACHINE = $(shell uname -m|sed -e "s/0000[0-9A-F]*00/rs6000/g"); \
+	if [ "$(CROSS)" = "" ]; then echo MACHINE = $(shell uname -m|sed -e "s/0000[0-9A-F]*00/rs6000/g;s/armv7l/armv7/g"); \
 	if [ "$(shell uname)" != "Linux" ]; then echo KERNEL_VERSION = "$(shell uname -r)"; else 	\
 	echo KERNEL_VERSION = $(shell grep UTS_RELEASE /usr/src/linux/include/linux/*.h|cut -d\" -f 2|head -1);	\
 	fi; else echo MACHINE = strongarm; \
 	echo KERNEL_VERSION = 2.4.18-rmk7-pxa3-embedix;	\
 	fi	;\
 	echo LIBC = $(shell ldd /bin/ls | grep libc.so | cut -f1 -d" " | cut -f3 -d"." | head -1); \
-	) >.cache-$(shell uname -n)
-
+	) >.cache-$(DEVICE)
 
 
 ifeq (_$(SRCS)_,__)
@@ -941,12 +1050,13 @@ built/.versions:
 	@mkdir -p built ; touch built/.versions 
 else	
 SRCREGEX = $(shell echo `cat .sources `|sed 's/\\//g;s/^.*=[ ]*//g;s/  /|/g')
-built/.versions: $(SRCS) $(HDRS)
+built/.versions: $(SVNENTRIES) .sources .headers
 	@mkdir -p built ; \
 	(echo creating new ls_fulltime version list >&2 ; \
 	    for i in $(SRCS)		; \
 	    do echo "$$i" >&2                  	; \
-		echo "$${i}.version=$${i}@@unknown,`ls --full-time $$i | awk '{print $$6"T"$$7"Z"}' | sed 's/-//g'`"; \
+			echo "$${i}.version=$${i}@@unknown,`ls --full-time $$i | awk '{print $$6"T"$$7"Z"}' | sed 's/-//g'`"; \
+			if test -L $$i && [ $(HAVESVN) = yes ] ; then svn ls -v `/bin/ls -l $$i | awk '{print $$NF}'` | awk '{printf("%s.version=%s@@%d,%s,%s%sT%s\n",$$7,$$7,$$1,$$2,$$4,$$5,$$6)}'; fi ; \
 	    done; \
 		echo "# end-of-versions created from ls --full-time"; \
 		if test -f .svn/entries; \
@@ -971,219 +1081,9 @@ built/.versions: $(SRCS) $(HDRS)
 		fi; \
 		echo "# end-of-versions created from .svn/entries";	\
 	) >built/.versions
+
 endif
-
-# debian package stuff, maintainers only
-DEBRT = $(OPA)/debpackage
-
-DEBSECTION = B
-DEBPKG = $(shell echo $(TARGET) | sed "s/_//g;y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/")
-
-ifeq ($(MAKE_T),$(KMOD))
-	# kernel module
-	DEBSECTION = K
-else
-ifeq ($(MAKE_T),$(BINTARGET))
-ifeq ($(SBIN_TARGET),_s_)
-	# admin 
-	DEBSECTION = M
-endif
-else
-	DEBSECTION = L
-	DEBPKG = $(shell echo lib$(TARGET) | sed "s/_//g;y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/")
-endif
-endif
-
-HAVESVN = $(shell if svn log >/dev/null 2>&1 && test -d .svn; then echo -n yes; else echo -n no; fi)
-
-ifeq (_S(HAVESVN)_,_yes_)
-DEBBUILD = $(shell svn list -v |sort -n|tail -1|awk '{print $$1}')
-else
-DEBBUILD = $(shell date +%y%m%d)
-endif
-
-DEBUSR = $(DEBRT)/usr
-DEBETC = $(DEBRT)/etc
-DEBBIN = $(DEBRT)/usr/$(BINDIR_)
-DEBLIB = $(DEBRT)/usr/lib
-DEBSHARE = $(DEBUSR)/share/$(TARGET)
-DEBINC = $(DEBUSR)/include/$(TARGET)
-DEBDOC = $(DEBUSR)/share/doc/$(DEBPKG)
-DEBMAN = $(DEBUSR)/share/man
-DEBCTRL = $(DEBRT)/DEBIAN
-DEBMOD = $(DEBRT)/$(KMODDIR)
-DEBVERS = $(VERSION)-$(DEBBUILD)
-
-O_DEBPKG = $(OPA)/$(DEBPKG)_$(DEBVERS)_$(MACHINE).deb
-
-$(DEBRT):
-	mkdir -m 755 -p ./$@
-
-$(DEBMAN):
-	mkdir -m 755 -p ./$@
-
-$(DEBSHARE):
-	mkdir -m 755 -p ./$@
-
-$(DEBCTRL):
-	mkdir -m 755 -p ./$@
-	
-$(DEBUSR):
-	mkdir -m 755 -p ./$@
-
-$(DEBBIN):
-	mkdir -m 755 -p ./$@
-
-ifeq (_$(DEBSECTION)_,_K_)
-$(DEBMOD):
-	mkdir -m 755 -p ./$@
-endif
-
-ifeq (_$(DEBSECTION)_,_L_)
-$(DEBLIB):
-	mkdir -m 755 -p ./$@
-
-$(DEBINC):
-	mkdir -m 755 -p ./$@
-endif
-
-$(DEBDOC):
-	mkdir -m 755 -p ./$@
-
-contrib/DEBIAN:
-	mkdir -m 755 -p ./contrib/DEBIAN
-
-contrib/DEBIAN/control:	debutils
-contrib/DEBIAN/copyright:	debutils
-contrib/DEBIAN/prerm:	debutils
-contrib/DEBIAN/postinst:	debutils
-
-ifeq (_$(isDAEMON)_,_d_)
-$(DEBETC)/init.d:
-	mkdir -m 755 -p ./$@
-
-contrib/DEBIAN/initd_rc:	debutils
-
-$(DEBETC)/init.d/$(TARGET):	contrib/DEBIAN/initd_rc $(DEBETC)/init.d
-	cp contrib/DEBIAN/initd_rc $(DEBETC)/init.d/$(TARGET)
-endif
-
-debutils: contrib/DEBIAN
-	mkDeb.sh -p $(DEBPKG) -t $(DEBSECTION)
-
-contrib/DEBIAN/changelog: contrib/DEBIAN
-ifeq (_$(HAVESVN)_,_yes_)
-	@svn log -v >contrib/DEBIAN/changelog
-else
-	echo please generate a changelog >contrib/DEBIAN/changelog
-endif
-	
-contrib/DEBIAN/changelog.Debian: contrib/DEBIAN 
-ifeq (_$(HAVESVN)_,_yes_)
-	@(echo "created by template Makefile";\
-	svn ls -v Makefile) >contrib/DEBIAN/changelog.Debian
-else
-	echo please generate a changelog.Debian.Debian >contrib/DEBIAN/changelog.Debian
-endif
-
-$(DEBCTRL)/p%: debutils $(DEBCTRL)
-#	echo 1 $< 2 $@ 3 $*
-	cp contrib/DEBIAN/p$* $@
- 
-debfiles: $(DEBCTRL)/postinst $(DEBCTRL)/prerm contrib/DEBIAN/changelog contrib/DEBIAN/changelog.Debian
-	chmod 755 contrib/DEBIAN/prerm contrib/DEBIAN/postinst	 
-
-ifeq ($(MAKE_T),$(KMOD))
-	# kernel module	
-install_deb: $(DEBMOD) $(O_KMOD)
-	$(INSTALL) -m 755 $(O_KMOD) $(DEBMOD)
-else
-	# not a kernel module
-	
-ifeq ($(MAKE_T),$(BINTARGET))
-	# binary
-DEBDEPLIBS = $(shell ldd $(O_TARGET) | awk '{print $$1}')
-
-install_deb: $(O_TARGET) $(DEBBIN) $(DEBSHARE)
-	$(STRIP) -v --strip-unneeded -R .comment $(O_TARGET) -o $(DEBBIN)/$(TARGET)
-	chmod 755 $(DEBBIN)/$(TARGET)
-	@(if test -d ./share ; then 	\
-	  umask 022			;\
-	  (cd ./share; $(TAR) --exclude CVS --exclude .svn -cf - .)|(cd $(DEBSHARE); $(TAR) -xf -) ;\
-	fi)
-else
-	# library
-DEBDEPLIBS = $(shell ldd $(O_LIBNAME) | awk '{print $$1}')
-
-install_deb: $(DEBLIB) $(DEBINC) $(DEBCTRL) $(O_LIBNAME)
-	$(STRIP) -v --strip-unneeded -R .comment $(O_LIBNAME) -o $(DEBLIB)/$(LIBNAME)
-	@echo "lib$(TARGET) $(MAJOR) $(DEBDEPEND)" >$(DEBCTRL)/shlibs
-	@(cd $(DEBLIB); ln -s $(LIBNAME) $(DEVLIBSYM); ln -s $(LIBNAME) $(SONAME); )
-	@(SRCPATH=`pwd` ;\
-	  cd $(DEBINC) ; \
-	  for I in $(HDRS) ;\
-	    do rm -f $$I ;\
-	    $(INSTALL) -m 644 $$SRCPATH/$$I $$I ;\
-	  done ) 		
-endif
-#	
-## DEBDEPEND = $(shell dpkg-shlibdeps -O $(O_LIBNAME) | cut -f2,3,4,5,6,7,8,9,10,11,12 -d=)
-## DEBDEPEND = $(shell mk_shlibs.sh -o $(O_LIBNAME))
-#
-DEBDEPITEMS = $(shell (for i in $(DEBDEPLIBS); do dpkg -S $$i 2>/dev/null; done) | awk '{print $$1}' | sort -u | cut -f1 -d: )	
-DEBDEPEND = $(shell (for item in $(DEBDEPITEMS); do apt-cache show $$item |grep Version:|awk '{printf("%s (>= %s),\n","'$$item'",$$2)}' | sort -u; done) | awk '{printf("%s ",$$0)}' | sed "s/ ,/,/g;s/, $$//g")
-#
-endif
+# SRCS __
 
 
-debclean:
-	rm -rf $(DEBRT) contrib/DEBIAN/changelog*
-
-DEBDESCHEAD = $(shell head -1 doc/description)
-DEBDESCTAIL = $(shell wc doc/description |awk '{print $$1-1}')
-
-DEBSIZE = $(shell du -s $(DEBRT) | awk '{print $$1}')
-	
-ifeq ($(MAKE_T),$(LIBNAME))
-debcopy: $(DEBMAN) $(DEBDOC) htmldoc install_deb debfiles $(OPA)/$(TARGET).pc
-	mkdir -p $(DEBLIB)/pkgconfig
-	cp $(OPA)/$(TARGET).pc $(DEBLIB)/pkgconfig
-else
-debcopy: $(DEBMAN) $(DEBDOC) htmldoc install_deb debfiles 
-endif	
-	@(if test -d ./man ; then 	\
-	  (cd ./man; $(TAR) --exclude CVS --exclude .svn -cf - .)|(cd $(DEBMAN); $(TAR) -xf -) ;\
-	  (cd $(DEBMAN); gzip -9 */*);\
-	fi)
-	@(if test -d ./doc ; then 	\
-	  (cd ./doc; $(TAR) --exclude README --exclude description --exclude CVS --exclude .svn -cf - .)|(cd $(DEBDOC); $(TAR) -xf -) ;\
-	fi)
-	cp contrib/DEBIAN/copyright $(DEBDOC)
-	@(cat doc/description; echo ""; cat doc/README) >$(DEBDOC)/README
-	gzip -c9 <contrib/DEBIAN/changelog >$(DEBDOC)/changelog.gz
-	gzip -c9 <contrib/DEBIAN/changelog.Debian >$(DEBDOC)/changelog.Debian.gz
-	@(cd ./$(DEBRT); md5sum `find * -type f|egrep -v DEBIAN/`) >$(DEBCTRL)/md5sums
-
-ifeq ($(MK_DEBIAN_PKG),1)
-deb: debclean all debcopy
-else
-deb: clean debclean all debcopy
-endif
-	@echo " LIBS: $(DEBDEPLIBS)"
-	@echo " ITEMS: $(DEBDEPITEMS)"
-	@echo " DEPEND: $(DEBDEPEND)"
-	@(echo "Package: $(DEBPKG)";\
-	echo "Version: $(DEBVERS)";\
-	echo "Depends: $(DEBDEPEND)";\
-	echo "Installed-Size: $(DEBSIZE)";\
-	sed "s/_ARCH_/$(MACHINE)/g;s/i[3456]86/i386/g;s/_DESC_/$(DEBDESCHEAD)/g" <contrib/DEBIAN/control;\
-	tail -$(DEBDESCTAIL) doc/description) >$(DEBCTRL)/control	
-	@(find $(DEBRT)/ -type d -empty -exec rmdir {} \; 2>/dev/null; echo "" >/dev/null; )
-	chmod -R g-s $(DEBRT)
-	find $(DEBRT)/usr/lib -type f -exec chmod 644 {} \;
-	fakeroot dpkg-deb --build $(DEBRT)
-	lintian $(DEBRT).deb
-	mv $(DEBRT).deb $(O_DEBPKG) && $(MAKE) debclean
-
-
-
+include debian.mk

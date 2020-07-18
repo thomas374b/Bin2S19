@@ -45,20 +45,41 @@
               make  raw  hex  dump.  Ommits  the  S19 format record header and
               trailer for each line.
 
+       <B>-n</B> <I>&lt;addr</I><B>_</B><I>number&gt;</I>
+              number of address bytes {2,3,4} to create  16-,  24-  or  32-bit
+              addresses.
 
+       <B>-j</B> <I>&lt;jump</I><B>_</B><I>number&gt;</I>
+              address  to  run  program. This address will be placed in the S9
+              section (last section)
 
-       <B>--saverc</B>
-              Save opts to personal rcfile <I>~/.Bin2S19rc</I> .
+       <B>-i,</B> <B>--ignore</B>
+              If given on the command line the checksum from  buggy  s19  file
+              will be ignored.
 
-       <B>-v,</B> <B>--verbose</B>
-              Be more verbose.
-
-       <B>-h,</B> <B>--help</B>
-              Print a help screen with defaults and exit.
+       <B>-z</B> <I>&lt;size</I><B>_</B><I>number&gt;</I>
+              Vector  feature: If given on the command line record length will
+              be reduced to 2 when the current adress is higher than (baseaddr
 
        <B>-V</B>     Print version and  copyright  information,  then  exit.  To  get
               detailed version and copyright information about used modules do
               a
+
+               strings Bin2S19 | grep copyright: <B>[ENTER]</B>
+
+
+
+</PRE>
+<H2>FILES</H2><PRE>
+       <B>~/.Bin2S19rc</B>
+
+       <B>~/etc/Bin2S19.conf</B>
+
+       <B>~/share/Bin2S19/Bin2S19rc</B>
+
+       <B>/opt/etc/Bin2S19.conf</B>
+
+       <B>/opt/share/Bin2S19/Bin2S19rc</B>
 
        <B>Bin2S19</B> looks at these locations to find its defaults.  If  a  file  is
        found  further  searching  is aborted. All values can be overwritten by

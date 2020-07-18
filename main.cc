@@ -1,6 +1,7 @@
 
 
-
+#define MAIN_G
+#include "tns_util/copyright.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -12,15 +13,23 @@
 #include "tns_util/mkopts.h"
 
 
-#define MAIN_G
-#include "tns_util/copyright.h"
 
-void check_hexnum(int i, float f, char *fn);
+#define DEBUG	1
 
+#include "S19rec_c.h"
+
+
+C_S19rec 	*S19Rec;
+
+
+/*
+void check_hexnum_base(int i, double f, char *fn);
+void check_hexnum_jump(int i, double f, char *fn);
+*/
 
 t_opts opts[] = {
- 	{check_hexnum,e_string,'b',"base\0","offset address\t\t\0",false,0,0.0,"0x0\0"},
-#define baseaddr opts[0].i
+ 	{empty_func, e_hexnum, 'b',"base\0","offset address\t\t\0",false,0,0.0,"0x0\0"},
+#define BASE_ADDR opts[0].i
 
 	{empty_func,e_string,'f',"file\0","binary input file\t\0",false,0,0.0,"xyz.bin\0                                                                                                                "},
 #define filename opts[1].s
@@ -40,12 +49,19 @@ t_opts opts[] = {
 	{empty_func,e_boolean,'x',"hexout\0","make raw hex dump\t\0",false,0,0.0,"xyz.bin\0                                                                                                                "},
 #define hexout opts[6].b
 
-	{empty_func,e_string,'o',"out\0","output file\t\t\0",false,0,0.0,"xyz.s19\0                                                                                                                "},
-#define outFileName opts[7].s
-#define useOutFile opts[7].b
+	{empty_func,e_integer,'n',"addr\0","number of address bytes\t\0",false,2,0.0,"\0"},
+#define ADDR_LEN	opts[7].i	
 
-	{empty_func,e_integer,'j',"jump\0","bootloader start address\0",false,0,0.0,"\0                                                                                                                "},
-#define JumpStart opts[8].i
+	{empty_func, e_hexnum,'j',"jump\0","addr to run program\t\0", false, 0xFFFE, 0.0,"0xFFFE\0"},
+#define JUMP_START	opts[8].i
+
+	{empty_func,e_boolean,'i',"ignore\0","checksum from buggy s19 file\0",false,0,0.0,"xyz.bin\0                                                                                                                "},
+#define IGNORE_CHECKSUM opts[9].b
+
+	{empty_func,e_integer,'z',"size\0","flashable area before vects\0",false,4096,0.0,"xyz.bin\0                                                                                                                "},
+#define MAX_FLASH_SIZE opts[10].i
+#define VECTOR_MODE opts[10].b
+
 
 /*
  	{do_prefix,e_boolean,'b',"begin\0","match only trigrams at start of string\0",false,0,0.0,"\0"},
@@ -63,250 +79,29 @@ t_opts opts[] = {
 */
 
 	{empty_func,e_unknown,'\0',"\0","\0",0,0,0.0,"\0"}
-	};
-
-
-typedef struct {
-	unsigned char ID;
-	unsigned char Len;
-	unsigned short Addr;
-	unsigned char buffer[256];
-} t_s19Line;
-
-
-#define S1_ID	1
-
-
-unsigned char Hex2Num(char C)
-{
-	if ((C >= '0') && (C <= '9')) {
-		return (C - '0');
-	}
-	if ((C >= 'A') && (C <= 'F')) {
-		return (C - 'A')+10;
-	}
-	if ((C >= 'a') && (C <= 'f')) {
-		return (C - 'a')+10;
-	}
-	return 0;
-}
-
-unsigned char Hex2Byte(char *S)
-{
-	return (Hex2Num(S[0]) << 4) | Hex2Num(S[1]);	
-}
-
-class t_s19Rec {
-public:
-	t_s19Line *Filled(char *Line, t_s19Line *tmpLine);		
 };
 
 
-t_s19Line *t_s19Rec::Filled(char *Line,t_s19Line *tmpLine)
-{
-	if ((Line == NULL) || (tmpLine == NULL)) {
-		return NULL;
-	}
-	int Len = strlen(Line);
-	if (Len <= 0) {
-		return NULL;
-	}
-	unsigned int CheckSum = 0;
-	int i = 0;
-	int k = 0;
-	if ((Len % 2) == 1) {
-//#ifdef DEBUG
-	    if (verbose_mode) {
-		fprintf(stderr,"Length %d is odd, removing DOS linefeed\n",Len);
-	    }
-//#endif
-	    Len--;
-	}
-	while (i < Len) {
-		char *Test = Line + i;		
-#ifdef DEBUG		
-		if (verbose_mode) {
-		    fprintf(stderr,"evaluating char[%c](byte 0x%04x) at pos %d, checksum 0x%08x\n",*Test,Hex2Byte(Test),i,CheckSum);
-		}
-#endif
-		switch(i) {
-			case 0: // ID
-				if (*Test != 'S') {
-					return NULL;
-				}
-				switch(Test[1]) {
-					case '1':
-						tmpLine->ID = 1;
-						break;
 
-					default:	
-						return NULL;
-				}
-				break;
-				
-			case 2: // Len
-				tmpLine->Len = Hex2Byte(Test);
-				CheckSum += tmpLine->Len;
-				CheckSum -= 3;
-				break;
-				
-			case 4: // Addr
-				tmpLine->Addr = Hex2Byte(Test);
-				CheckSum += tmpLine->Addr;
-				tmpLine->Addr <<= 8;					
-				tmpLine->Addr |= (Hex2Byte(&Test[2]));
-				CheckSum += (tmpLine->Addr & 0xff);
-				i+=2;
-				break;
-					
-			default: // Bytes
-				tmpLine->buffer[k] = Hex2Byte(Test);
-				CheckSum += tmpLine->buffer[k];
-				k++; 
-				break;
-		}
-		i+=2;
-	}
-	if ((CheckSum & 0xff) != 0xff) {
-//#ifdef DEBUG
-		if (verbose_mode) {
-		    fprintf(stderr,"checksum 0x%04x did not match\n",CheckSum);
-//		    exit(1);
-		}
-//#endif		
-		return NULL;
-	}
-	tmpLine->Len -= 3;
-	return tmpLine;
+// #define S1_ID	1
+
+
+/*
+
+
+
+
+void check_hexnum_base(int i, double f, char *fn)
+{
+	check_hexnum(i, fn, &BASE_ADDR);
 }
 
-void check_hexnum(int i, float f, char *fn)
+void check_hexnum_jump(int i, double f, char *fn)
 {
-	char st[256];
-	int d;
-	
-	if (sscanf(fn,"0x%s",st) == 1) {
-		char *s = st;
-		baseaddr = 0;
-		while (strlen(s) > 1) {
-		    baseaddr |= Hex2Num(*s);
-		    baseaddr <<= 4;
-		    s++;
-		} 
-		if (verbose_mode) {
-		    fprintf(stderr,"got baseaddr: 0x%04x\n",baseaddr);
-		}
-		return;
-	}
-	baseaddr = 0;
+	check_hexnum(i, fn, &JUMP_START);
 }
+*/
 
-
-void makeS19(void)
-{
-	unsigned char buf[65536 + 4096];
-
-	if (verbose_mode) {
-		fprintf(stderr,"open binary file \"%s\"\n",filename);
-	}	
-	int ifd = open(filename,O_RDONLY);
-	if (ifd < 0) {
-		fprintf(stderr,"open(\"%s\") failed: %s\n",filename,strerror(errno));
-		_exit(1);
-	}
-	int Size = read(ifd,buf,65536);
-	close(ifd);
-
-	char outStr[1024];
-	int ofd = 1;
-	if (useOutFile) {
-		ofd = open(outFileName,O_RDWR|O_TRUNC|O_CREAT);
-		if (ofd < 0) {
-			fprintf(stderr,"open(\"%s\") failed: %s\n",outFileName,strerror(errno));
-			ofd = 1;
-		}
-	}
-	
-		
-	int k = 0;
-	int Length = 0;
-	int q = 0;
-	int Len = 0;
-	
-	while (k < Size) {
-		if (rasin) {
-			if (q == Length) {
-				q = 0;
-			}
-			if (q == 0) {
-				unsigned short *O,*L;
-				O = (unsigned short *)&buf[k];
-				L = (unsigned short *)&buf[k+2];
-				baseaddr = *O;
-				Length = *L;
-				k += 4;
-				if (verbose_mode) {
-					fprintf(stderr,"segment: 0x%04x, len: %d\n",*O,*L);
-				}
-			}				
-			Len = Length -q;
-		} else {
-			Len = Size -k;
-		}
-
-
-		if (Len > RecSize)
-			Len = RecSize;
-
-		int ChkSum = 0;		
-		ChkSum += (Len+3);    	
-		
-		int Addr = baseaddr;
-		if (rasin) {
-			Addr += q;
-		} else {
-			Addr += k;
-		}			
-		ChkSum += ((Addr >> 8) & 0xff);
-		ChkSum += Addr & 0xff;				
-		
-		if (!(hexout)) {
-			sprintf(outStr, "S1%02X%04X",Len+3,Addr);
-			write(ofd, outStr, strlen(outStr));
-		} else {
-			sprintf(outStr, "%04X:",Addr);
-			write(ofd, outStr, strlen(outStr));
-		}	
-			
-		for (int i=0; i<Len; i++) {
-			sprintf(outStr, "%02X",buf[i+k]);
-			write(ofd, outStr, strlen(outStr));
-			ChkSum += buf[i+k];
-		}		
-		
-		if (!(hexout)) {
-			sprintf(outStr, "%02X\r\n",(unsigned char)(0xff - (ChkSum & 0xff)));
-			write(ofd, outStr, strlen(outStr));
-		} else {
-			sprintf(outStr, "\n");
-			write(ofd, outStr, strlen(outStr));
-		}			
-
-		k += Len;
-		q += Len;
-	}
-	if (!(hexout)) {
-		char ChkSum = -4;
-		ChkSum += ((JumpStart >> 8) & 0xff);
-		ChkSum += JumpStart & 0xff;				
-		
-		sprintf(outStr, "S903%04X%02X\r\n", JumpStart, ChkSum & 0xFF );
-		write(ofd, outStr, strlen(outStr));
-	}		
-	if (useOutFile) {
-		close(ofd);
-	}
-}
 
 void makeRaw(void) 
 {
@@ -323,13 +118,12 @@ void makeRaw(void)
 	}
 	char Binary[0x10000];
 	memset(Binary,0xff,0x10000);
-	int lowest,highest;
+	uint32_t lowest,highest;
 	lowest = 0x10000;
 	highest = 0;
 	
 	char *L = FBuf.ReadLn();
 	while (L != NULL) {
-		t_s19Rec S19Rec;
 		t_s19Line S1Line,*got;
 				
 /*		int l = strlen(L);
@@ -342,27 +136,46 @@ void makeRaw(void)
 		    }
 		}
 */
-#ifdef DEBUG
+#ifdef WITH_DEBUG_
 		if (verbose_mode) {
 		    fprintf(stderr,"parsing line \"%s\"\n",L);
 		}
-#endif		
-		got = S19Rec.Filled(L,&S1Line);
-		if (got != NULL) {
-			memcpy(&Binary[got->Addr],got->buffer,got->Len);	
-			if (highest < got->Addr+got->Len) {
-				highest = got->Addr+got->Len;
-			}
-			if (lowest > got->Addr) {
-				lowest = got->Addr;
-			}
-			
-		} else {
-#ifdef DEBUG
-		    if (verbose_mode) {
-				fprintf(stderr,"no valid S19line\n");
-		    }
 #endif
+		uint8_t lineCheck = 0;
+		got = C_S19rec::Filled(L, &S1Line, &lineCheck);
+
+		if (got != NULL) {
+#ifdef WITH_DEBUG_
+			fprintf(stderr,"got.addr:%ld, got.buffer:%ld, got.Len:%ld\n",got->Addr, (long)&got->buffer[0], got->Len);
+#endif
+			switch(got->ID) {
+				case '1':
+				case '2':
+				case '3':
+					if ((lineCheck == 0xFF) && (got->ID)) {
+						memcpy(&Binary[got->Addr], got->buffer, got->payloadLen);
+
+						if (highest < got->Addr+got->payloadLen) {
+							highest = got->Addr+got->payloadLen;
+						}
+						if (lowest > got->Addr) {
+							lowest = got->Addr;
+						}
+					} else {
+						fprintf(stderr,"no checksum match [0x%02X]\n", lineCheck);
+					}
+					break;
+
+				default:
+					fprintf(stderr,"record with ID [%c] ignored\n", got->ID);
+					break;
+			}
+		} else {
+//#ifdef DEBUG
+		    if (verbose_mode) {
+				fprintf(stderr,"no valid S19line [%s]\n",L);
+		    }
+//#endif
 		}
 		L = FBuf.ReadLn();
 	}
@@ -371,7 +184,7 @@ void makeRaw(void)
 	int Size = (highest - lowest);
 	if (Size > 0) {
 		char fn[256];
-		sprintf(fn,"%s-0x%04x.bin",filename,lowest);
+		sprintf(fn,"%s-0x%04X.bin",filename,lowest);
 		int fd = open(fn,O_RDWR|O_CREAT|O_TRUNC,0644);
 		if (fd > 0) {
 			if (write(fd,&Binary[lowest],Size) != Size) {
@@ -390,8 +203,13 @@ int main(int argc, char *argv[])
 {
 	scan_args(argc,argv,opts);
 
+	S19Rec = new C_S19rec( RecSize, (s19_addrLen_e)ADDR_LEN );
+
 	if (s19out || rasin) {
-		makeS19();
+		if (verbose_mode) {
+			fprintf(stderr,"open binary file \"%s\"\n",filename);
+		}
+		S19Rec->makeS19(filename, BASE_ADDR, rasin, hexout, JUMP_START, VECTOR_MODE?MAX_FLASH_SIZE:-1);
 	} else {
 		if (rawout) {
 			if (verbose_mode) {

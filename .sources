@@ -1,2 +1,3 @@
 SRCS = \
-	main.cc		
+	main.cc	\
+	S19rec_c.cpp

@@ -66,6 +66,22 @@ linefeed in S19 format will occur).
 .B \-\^x, \fB-\-\^hexout\fR
 make raw hex dump. Ommits the S19 format record header and trailer 
 for each line.
+.TP
+.B \fB\-\^n\fR \fI<addr_number>\fR
+number of address bytes {2,3,4} to create 16-, 24- or 32-bit addresses.
+.TP
+.B \fB\-\^j\fR \fI<jump_number>\fR
+address to run program. This address will be placed in the S9 section (last section)
+.TP
+.B \-\^i, \fB-\-\^ignore\fR
+If given on the command line the checksum from buggy s19 file will be ignored.
+.TP
+.B \fB\-\^z\fR \fI<size_number>\fR
+Vector feature: If given on the command line record length will be reduced to 2 when
+the current adress is higher than (baseaddr + flashsize). This will lead to one S19-line
+per vector even if recordlength was specified higher.
+
+
 
 .PP
 .TP
