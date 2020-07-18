@@ -1,8 +1,0 @@
-Section: utils
-Priority: optional
-Architecture: _ARCH_
-Suggests: 
-Conflicts: 
-Replaces: 
-Maintainer: Thomas Pantzer <software@pantzer.net>
-Description: _DESC_
